@@ -1,0 +1,92 @@
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+from models import db, Athlete, MedicalReport
+from sklearn.neighbors import KNeighborsClassifier
+import pandas as pd
+import numpy as np
+import joblib
+import os
+from config import Config
+
+app = Flask(__name__)
+app.config.from_object(Config)
+CORS(app)
+db.init_app(app)
+
+# Load trained KNN model
+MODEL_PATH = os.path.join(os.path.dirname(__file__), 'knn_model/model.pkl')
+scaler, knn_model = joblib.load(MODEL_PATH)
+
+@app.route('/')
+def home():
+    return "Athlete Health Monitoring System"
+
+@app.route('/api/athletes', methods=['POST'])
+def create_athlete():
+    data = request.json
+    new_athlete = Athlete(
+        name=data['name'],
+        age=data['age'],
+        gender=data['gender'],
+        height=data['height'],
+        weight=data['weight'],
+        sport=data['sport']
+    )
+    db.session.add(new_athlete)
+    db.session.commit()
+    return jsonify({"message": "Athlete created", "id": new_athlete.id}), 201
+
+@app.route('/api/athletes/<int:athlete_id>/medical', methods=['POST'])
+def add_medical_report(athlete_id):
+    athlete = Athlete.query.get_or_404(athlete_id)
+    data = request.json
+    
+    # Prepare features for prediction
+    features = np.array([
+        data['heart_rate'],
+        data['blood_pressure_sys'],
+        data['blood_pressure_dia'],
+        data['oxygen_level'],
+        data['training_hours'],
+        athlete.age,
+        athlete.weight,
+        athlete.height
+    ]).reshape(1, -1)
+    
+    # Scale features and predict
+    scaled_features = scaler.transform(features)
+    injury_risk = knn_model.predict(scaled_features)[0]
+    risk_probability = knn_model.predict_proba(scaled_features)[0][1]
+    
+    new_report = MedicalReport(
+        athlete_id=athlete.id,
+        heart_rate=data['heart_rate'],
+        blood_pressure_sys=data['blood_pressure_sys'],
+        blood_pressure_dia=data['blood_pressure_dia'],
+        oxygen_level=data['oxygen_level'],
+        training_hours=data['training_hours'],
+        injury_risk=bool(injury_risk),
+        risk_probability=float(risk_probability)
+    )
+    
+    db.session.add(new_report)
+    db.session.commit()
+    
+    return jsonify({
+        "message": "Medical report added",
+        "injury_risk": injury_risk,
+        "risk_probability": risk_probability
+    }), 201
+
+@app.route('/api/athletes/<int:athlete_id>', methods=['GET'])
+def get_athlete(athlete_id):
+    athlete = Athlete.query.get_or_404(athlete_id)
+    return jsonify({
+        "id": athlete.id,
+        "name": athlete.name,
+        "sport": athlete.sport,
+        "reports": [r.serialize() for r in athlete.medical_reports]
+    })
+
+if __name__ == '__main__':
+    app.run(debug=True)
