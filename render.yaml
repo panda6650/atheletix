@@ -1,0 +1,10 @@
+yaml
+services:
+  - type: web
+    name: athlete-health-backend
+    runtime: python
+    buildCommand: "pip install -r requirements.txt && python knn_model/train_model.py"
+    startCommand: "gunicorn app:app"
+    envVars:
+      - key: DATABASE_URL
+        value: postgresql://user:password@localhost/athletedb
