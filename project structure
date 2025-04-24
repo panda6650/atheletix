@@ -1,0 +1,8 @@
+backend/
+├── app.py                # Main application
+├── models.py             # Database models
+├── knn_model/            # ML model files
+│   ├── train_model.py    # Model training script
+│   └── model.pkl         # Trained model
+├── requirements.txt      # Python dependencies
+└── config.py            # Configuration
